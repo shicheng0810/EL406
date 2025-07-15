@@ -42,9 +42,8 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
     i = 0
     staleness = 0
     
-    # 获取第一帧以确定感兴趣区域（如果没有提供的话）
+
     if roi is None:
-        # 如果已有保存的 roi 文件，就先用它
         try:
             with open("roi_info.json", "r") as f:
                 roi_data = json.load(f)
@@ -57,7 +56,6 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
             ret, first_frame = cap.read()
             if ret:
                 roi = select_roi(cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB))
-                # 重置视频到开始位置
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
     while True:
         i += 1
@@ -65,16 +63,14 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
         if not ret:
             break  # End of video
             
-        # 应用ROI裁剪
         if roi is not None:
             x, y, w, h = roi
-            # 确保ROI在图像范围内
             h_img, w_img = frame.shape[:2]
             end_x = min(x + w, w_img)
             end_y = min(y + h, h_img)
             if x < w_img and y < h_img:
                 roi_frame = frame[y:end_y, x:end_x]
-                frame = roi_frame  # 使用裁剪后的帧进行后续处理
+                frame = roi_frame  
         
         if fiducial_coordinates is None:
             fiducial_coordinates = detect_fiducials(frame)
@@ -83,7 +79,6 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
                 fiducial_coordinates = None
                 continue
             elif roi is not None:
-                # 如果使用了ROI，需要调整fiducial坐标
                 adjusted_coordinates = {}
                 for key, coord in fiducial_coordinates.items():
                     adjusted_coordinates[key] = type('obj', (object,), {'x': coord[0] - x, 'y': coord[1] - y})
@@ -145,12 +140,12 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
     for cycle in cycles:
         frame_count = cycle['frame_count']
         accumulated_mask = cycle['accum_mask']
-        # 避免除零错误
+        # Avoid 0 error
         if frame_count > 0:
             accumulated_mask /= frame_count
 
         # Convert accumulated mask to 8-bit image
-        # 避免 NaN 或无效值
+        # Avoid Nan
         accumulated_mask = np.nan_to_num(accumulated_mask)
         accum_mask_uint8 = cv2.normalize(accumulated_mask, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
@@ -163,46 +158,46 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
         if roi is not None:
             cycle['roi'] = roi
 
-    # 保存ROI信息到文件
+    # Save ROI
     if roi is not None:
         try:
             with open('roi_info.json', 'w') as f:
                 json.dump({'roi': roi}, f, indent=4)
         except Exception as e:
-            print(f"保存ROI信息时出错: {e}")
+            print(f"Save ROI Info Error: {e}")
 
     return cycles
 
 def select_roi(frame):
-    """让用户选择感兴趣区域"""
+    """Choose ROI"""
     import tkinter as tk
     from tkinter import ttk
     from PIL import Image, ImageTk
     
     SCALING_FACTOR = 1
     
-    # 创建ROI选择窗口
+    # Create ROI window
     roi_window = tk.Tk()
     roi_window.title("Choose Region of Interest")
     
-    # 存储ROI坐标
+    # Save ROI
     roi_data = {'start_x': 0, 'start_y': 0, 'end_x': 0, 'end_y': 0, 'confirmed': False}
     
-    # 调整图像大小以便显示
+    # Adjust picture 
     img_pil = Image.fromarray(frame)
     img_width = img_pil.width // SCALING_FACTOR
     img_height = img_pil.height // SCALING_FACTOR
     img_pil = img_pil.resize((img_width, img_height))
     img_tk = ImageTk.PhotoImage(img_pil)
     
-    # 创建Canvas用于显示图像和选择区域
+    # Create Canvas
     canvas = tk.Canvas(roi_window, width=img_width, height=img_height)
     canvas.pack(padx=10, pady=10)
     
-    # 保存图像引用防止垃圾回收
+    # Save img
     canvas.img_tk = img_tk
     
-    # 显示图像
+    # Show img
     canvas.create_image(0, 0, anchor=tk.NW, image=img_tk)
     
     rect_id = None
@@ -226,7 +221,6 @@ def select_roi(frame):
         )
         
     def confirm_roi():
-        # 转换回原始图像坐标
         x = min(roi_data['start_x'], roi_data['end_x']) * SCALING_FACTOR
         y = min(roi_data['start_y'], roi_data['end_y']) * SCALING_FACTOR
         w = abs(roi_data['end_x'] - roi_data['start_x']) * SCALING_FACTOR
@@ -240,12 +234,10 @@ def select_roi(frame):
         roi_data['confirmed'] = True
         roi_data['roi'] = None
         roi_window.destroy()
-    
-    # 绑定鼠标事件
+
     canvas.bind("<ButtonPress-1>", on_mouse_down)
     canvas.bind("<B1-Motion>", on_mouse_move)
     
-    # 确认和跳过按钮
     btn_frame = ttk.Frame(roi_window)
     btn_frame.pack(pady=10)
     
@@ -255,7 +247,6 @@ def select_roi(frame):
     skip_btn = ttk.Button(btn_frame, text="Whole figure", command=use_full_image)
     skip_btn.pack(side=tk.LEFT, padx=5)
     
-    # 等待用户操作完成
     roi_window.mainloop()
     
     if roi_data.get('confirmed', False) and roi_data.get('roi') is not None:
@@ -347,10 +338,10 @@ def calibrate_homography(filepath: str = 'output.mjpeg'):
             homography_matrix, _ = cv2.findHomography(pts_src, pts_dst)
             warped_image = cv2.warpPerspective(frame, homography_matrix, (width, height))
 
-            # 绘制 8 个喷嘴区域
+            # Draw 8-nozzle area
             num_nozzles = 8
             nozzle_width = width // num_nozzles
-            margin_ratio = 0.20  # 设置 margin（10%）
+            margin_ratio = 0.20  # Set margin（10%）
 
             for i in range(num_nozzles):
                 x_start = i * nozzle_width
@@ -358,18 +349,18 @@ def calibrate_homography(filepath: str = 'output.mjpeg'):
                 y_start = int(0.10 * height)
                 y_end = int(0.90 * height)
 
-                # 画红色外框（完整喷嘴区域）
+                # Draw red frame
                 cv2.rectangle(warped_image, (x_start, y_start), (x_end, y_end), (0, 0, 255), 2)
 
-                # 计算带 margin 的区域
+                # Calculate margin area
                 margin = int(nozzle_width * margin_ratio)
                 x_start_margin = x_start + margin
                 x_end_margin = x_end - margin
 
-                # 画白色内框（用于 white ratio 计算的区域）
+                # Draw white frame
                 cv2.rectangle(warped_image, (x_start_margin, y_start), (x_end_margin, y_end), (255, 255, 255), 2)
 
-            # 转换为 ImageTk 以显示在 GUI 中
+        
             img = Image.fromarray(cv2.cvtColor(warped_image, cv2.COLOR_BGR2RGB))
             img_tk = ImageTk.PhotoImage(img)
             
