@@ -200,21 +200,20 @@ def homography(fiducial_coordinates: dict[int, tuple[float, float]], image: np.n
     return warped_image
 
 
-
 def classify_nozzles(warped_image: np.ndarray, section: str = 'B', display: bool = False) -> tuple[dict[str, list[bool]], float]:
     """
-    计算每个喷嘴的 white ratio，并判断是否堵塞。
-    
-    - 通过给每个喷嘴区域添加 margin（边框），避免计算到另一排喷嘴的水柱。
-    
+    Calculate the white ratio of each nozzle and determine if it is clogged.
+
+    - Adds a margin around each nozzle region to avoid counting spray from neighboring rows.
+
     Args:
-        warped_image: 经过 homography 变换的喷嘴区域图像。
-        section: 处理的喷嘴排 ('A' 或 'B')。
-        display: 是否显示结果。
+        warped_image: Image of the nozzle area after homography transformation.
+        section: The row of nozzles to process ('A' or 'B').
+        display: Whether to display the result visually.
 
     Returns:
-        - 喷嘴状态字典
-        - 该排喷嘴的平均 white_ratio
+        - Dictionary containing clogging status of each nozzle
+        - Mean white ratio of the row
     """
 
     num_nozzles = 8
@@ -222,34 +221,34 @@ def classify_nozzles(warped_image: np.ndarray, section: str = 'B', display: bool
     height = warped_image.shape[0]
 
     nozzle_width = width // num_nozzles
-    margin_ratio = 0.20  # 设置边框宽度，例如 10%
+    margin_ratio = 0.20  # Margin width to exclude edges (e.g., 20%)
 
     white_ratios = []
 
     for i in range(num_nozzles):
-        # **计算 x 方向的范围，留出 margin**
-        x_start = int(i * nozzle_width + margin_ratio * nozzle_width)  # 左边界
-        x_end = int((i + 1) * nozzle_width - margin_ratio * nozzle_width)  # 右边界
+        # **Compute x-range with margin to avoid adjacent spray**
+        x_start = int(i * nozzle_width + margin_ratio * nozzle_width)  # left boundary
+        x_end = int((i + 1) * nozzle_width - margin_ratio * nozzle_width)  # right boundary
 
-        # **y 方向保持不变**
+        # **Keep y-range unchanged**
         y_start = int(0.10 * height)
         y_end = int(0.90 * height)
         nozzle_region = warped_image[y_start:y_end, x_start:x_end]
 
-        # 转换成灰度图
+        # Convert to grayscale if not already
         if len(nozzle_region.shape) == 3:
             nozzle_region = cv2.cvtColor(nozzle_region, cv2.COLOR_BGR2GRAY)
 
-        # 计算 white_ratio
+        # Calculate white ratio
         white_pixels = cv2.countNonZero(nozzle_region)
         total_pixels = nozzle_region.size
         white_ratio = white_pixels / total_pixels if total_pixels > 0 else 0
         white_ratios.append(white_ratio)
 
-    # 计算 mean 和 std
+    # Calculate mean and standard deviation
     mean_ratio = np.mean(white_ratios)
     std_ratio = np.std(white_ratios)
-    threshold_z = -1.75  # Z-score 阈值
+    threshold_z = -1.75  # Z-score threshold
 
     nozzle_status = []
 
@@ -259,7 +258,7 @@ def classify_nozzles(warped_image: np.ndarray, section: str = 'B', display: bool
         print(f"Nozzle {i + 1}: White ratio = {ratio:.2f}, Z-score = {z_score:.2f}, Clogged = {is_clogged}")
         nozzle_status.append(is_clogged)
 
-    # **可视化结果**
+    # **Visualization**
     if display:
         if len(warped_image.shape) == 2:
             warped_image = cv2.cvtColor(warped_image, cv2.COLOR_GRAY2BGR)
