@@ -36,9 +36,8 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
     i = 0
     staleness = 0
     
-    # 获取第一帧以确定感兴趣区域（如果没有提供的话）
+
     if roi is None:
-        # 如果已有保存的 roi 文件，就先用它
         try:
             with open("roi_info.json", "r") as f:
                 roi_data = json.load(f)
@@ -51,7 +50,6 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
             ret, first_frame = cap.read()
             if ret:
                 roi = select_roi(cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB))
-                # 重置视频到开始位置
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
     while True:
         i += 1
@@ -59,16 +57,14 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
         if not ret:
             break  # End of video
             
-        # 应用ROI裁剪
         if roi is not None:
             x, y, w, h = roi
-            # 确保ROI在图像范围内
             h_img, w_img = frame.shape[:2]
             end_x = min(x + w, w_img)
             end_y = min(y + h, h_img)
             if x < w_img and y < h_img:
                 roi_frame = frame[y:end_y, x:end_x]
-                frame = roi_frame  # 使用裁剪后的帧进行后续处理
+                frame = roi_frame 
         
         if fiducial_coordinates is None:
             fiducial_coordinates = detect_fiducials(frame)
@@ -77,7 +73,6 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
                 fiducial_coordinates = None
                 continue
             elif roi is not None:
-                # 如果使用了ROI，需要调整fiducial坐标
                 adjusted_coordinates = {}
                 for key, coord in fiducial_coordinates.items():
                     adjusted_coordinates[key] = type('obj', (object,), {
@@ -142,12 +137,10 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
     for cycle in cycles:
         frame_count = cycle['frame_count']
         accumulated_mask = cycle['accum_mask']
-        # 避免除零错误
         if frame_count > 0:
             accumulated_mask /= frame_count
 
         # Convert accumulated mask to 8-bit image
-        # 避免 NaN 或无效值
         accumulated_mask = np.nan_to_num(accumulated_mask)
         accum_mask_uint8 = cv2.normalize(accumulated_mask, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
@@ -156,50 +149,42 @@ def threshold_video_movement(video_path: str, roi=None) -> list[dict]:
 
         cycle['thresholded_image'] = thresholded_image
         cycle['fiducial_coordinates'] = fiducial_coordinates
-        # 保存ROI信息以供后续使用
         if roi is not None:
             cycle['roi'] = roi
 
-    # 保存ROI信息到文件
     if roi is not None:
         try:
             with open('roi_info.json', 'w') as f:
                 json.dump({'roi': roi}, f, indent=4)
         except Exception as e:
-            print(f"保存ROI信息时出错: {e}")
+            print(f"Save ROI Info Error: {e}")
 
     return cycles
 
 def select_roi(frame):
-    """让用户选择感兴趣区域"""
+    """Choose ROI"""
     import tkinter as tk
     from tkinter import ttk
     from PIL import Image, ImageTk
     
     SCALING_FACTOR = 1
     
-    # 创建ROI选择窗口
     roi_window = tk.Tk()
     roi_window.title("Choose Region of Interest")
     
-    # 存储ROI坐标
     roi_data = {'start_x': 0, 'start_y': 0, 'end_x': 0, 'end_y': 0, 'confirmed': False}
     
-    # 调整图像大小以便显示
     img_pil = Image.fromarray(frame)
     img_width = img_pil.width // SCALING_FACTOR
     img_height = img_pil.height // SCALING_FACTOR
     img_pil = img_pil.resize((img_width, img_height))
     img_tk = ImageTk.PhotoImage(img_pil)
     
-    # 创建Canvas用于显示图像和选择区域
     canvas = tk.Canvas(roi_window, width=img_width, height=img_height)
     canvas.pack(padx=10, pady=10)
     
-    # 保存图像引用防止垃圾回收
     canvas.img_tk = img_tk
     
-    # 显示图像
     canvas.create_image(0, 0, anchor=tk.NW, image=img_tk)
     
     rect_id = None
@@ -223,7 +208,6 @@ def select_roi(frame):
         )
         
     def confirm_roi():
-        # 转换回原始图像坐标
         x = min(roi_data['start_x'], roi_data['end_x']) * SCALING_FACTOR
         y = min(roi_data['start_y'], roi_data['end_y']) * SCALING_FACTOR
         w = abs(roi_data['end_x'] - roi_data['start_x']) * SCALING_FACTOR
@@ -238,11 +222,9 @@ def select_roi(frame):
         roi_data['roi'] = None
         roi_window.destroy()
     
-    # 绑定鼠标事件
     canvas.bind("<ButtonPress-1>", on_mouse_down)
     canvas.bind("<B1-Motion>", on_mouse_move)
     
-    # 确认和跳过按钮
     btn_frame = ttk.Frame(roi_window)
     btn_frame.pack(pady=10)
     
@@ -252,7 +234,6 @@ def select_roi(frame):
     skip_btn = ttk.Button(btn_frame, text="Whole figure", command=use_full_image)
     skip_btn.pack(side=tk.LEFT, padx=5)
     
-    # 等待用户操作完成
     roi_window.mainloop()
     
     if roi_data.get('confirmed', False) and roi_data.get('roi') is not None:
@@ -305,7 +286,6 @@ def homography(fiducial_coordinates: dict[int, tuple[float, float]], image: np.n
     pts_src = np.array([calibration_data[row]["homography"]], dtype=float)
     
     # Define destination points (same as in calibration.py)
-    # 目标尺寸应从 calibration_data 中获取
     
     if 'roi' in calibration_data[row]:
         _, _, w, h = calibration_data[row]['roi']
@@ -350,11 +330,9 @@ def homography(fiducial_coordinates: dict[int, tuple[float, float]], image: np.n
     # plt.show()
 
     print(f"Warped image shape for section {row}: {warped_image.shape}")
-        # 保存对比图
     cv2.imwrite(f"original_section_{row}.png", image)
     cv2.imwrite(f"warped_section_{row}.png", warped_image)
 
-    # 显示对比
     plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1)
     plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
@@ -371,22 +349,20 @@ def homography(fiducial_coordinates: dict[int, tuple[float, float]], image: np.n
     
     return warped_image
 
-
-
 def classify_nozzles(warped_image: np.ndarray, section: str = 'B', display: bool = False) -> tuple[dict[str, list[bool]], float]:
     """
-    计算每个喷嘴的 white ratio，并判断是否堵塞。
-    
-    - 通过给每个喷嘴区域添加 margin（边框），避免计算到另一排喷嘴的水柱。
-    
+    Compute the white ratio for each nozzle and determine if it's clogged.
+
+    - Adds a margin to each nozzle region to avoid including water streams from adjacent nozzle rows.
+
     Args:
-        warped_image: 经过 homography 变换的喷嘴区域图像。
-        section: 处理的喷嘴排 ('A' 或 'B')。
-        display: 是否显示结果。
+        warped_image: The homography-warped image of the nozzle region.
+        section: The nozzle row being processed ('A' or 'B').
+        display: Whether to display the result.
 
     Returns:
-        - 喷嘴状态字典
-        - 该排喷嘴的平均 white_ratio
+        - A dictionary with nozzle clogging status
+        - The average white ratio for this row
     """
 
     num_nozzles = 8
@@ -394,34 +370,34 @@ def classify_nozzles(warped_image: np.ndarray, section: str = 'B', display: bool
     height = warped_image.shape[0]
 
     nozzle_width = width // num_nozzles
-    margin_ratio = 0.20  # 设置边框宽度，例如 10%
+    margin_ratio = 0.20  # Margin width ratio, e.g., 20%
 
     white_ratios = []
 
     for i in range(num_nozzles):
-        # **计算 x 方向的范围，留出 margin**
-        x_start = int(i * nozzle_width + margin_ratio * nozzle_width)  # 左边界
-        x_end = int((i + 1) * nozzle_width - margin_ratio * nozzle_width)  # 右边界
+        # Compute x-range for each nozzle with margin
+        x_start = int(i * nozzle_width + margin_ratio * nozzle_width)  # Left boundary
+        x_end = int((i + 1) * nozzle_width - margin_ratio * nozzle_width)  # Right boundary
 
-        # **y 方向保持不变**
+        # y-range remains fixed
         y_start = int(0.10 * height)
         y_end = int(0.90 * height)
         nozzle_region = warped_image[y_start:y_end, x_start:x_end]
 
-        # 转换成灰度图
+        # Convert to grayscale if needed
         if len(nozzle_region.shape) == 3:
             nozzle_region = cv2.cvtColor(nozzle_region, cv2.COLOR_BGR2GRAY)
 
-        # 计算 white_ratio
+        # Compute white ratio
         white_pixels = cv2.countNonZero(nozzle_region)
         total_pixels = nozzle_region.size
         white_ratio = white_pixels / total_pixels if total_pixels > 0 else 0
         white_ratios.append(white_ratio)
 
-    # 计算 mean 和 std
+    # Compute mean and standard deviation
     mean_ratio = np.mean(white_ratios)
     std_ratio = np.std(white_ratios)
-    threshold_z = -1.75  # Z-score 阈值
+    threshold_z = -1.75  # Z-score threshold
 
     nozzle_status = []
 
@@ -431,7 +407,7 @@ def classify_nozzles(warped_image: np.ndarray, section: str = 'B', display: bool
         print(f"Nozzle {i + 1}: White ratio = {ratio:.2f}, Z-score = {z_score:.2f}, Clogged = {is_clogged}")
         nozzle_status.append(is_clogged)
 
-    # **可视化结果**
+    # Visualization
     if display:
         if len(warped_image.shape) == 2:
             warped_image = cv2.cvtColor(warped_image, cv2.COLOR_GRAY2BGR)
